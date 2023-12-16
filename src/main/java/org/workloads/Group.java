@@ -10,17 +10,24 @@ import java.util.Map;
 
 public class Group extends AbstractActor {
 
+    public enum Balancing {
+        LeastBusy,
+        RoundRobin,
+    }
+
     private List<ActorRef> downstream;
     private int counter;
     private Map<ActorRef, Integer> active;
+    private Balancing balancing;
 
-    static Props props(List<ActorRef> downstream) {
+    static Props props(List<ActorRef> downstream, Balancing balancing) {
         // You need to specify the actual type of the returned actor
         // since Java 8 lambdas have some runtime type information erased
-        return Props.create(Group.class, () -> new Group(downstream));
+        return Props.create(Group.class, () -> new Group(downstream, balancing));
     }
 
-    public Group(List<ActorRef> downstream) {
+    public Group(List<ActorRef> downstream, Balancing balancing) {
+        this.balancing = balancing;
         this.downstream = downstream;
         this.active = new HashMap<>();
         for(var a : downstream) {
@@ -60,7 +67,6 @@ public class Group extends AbstractActor {
                 leastBusy = e.getKey();
             }
         }
-        active.put(leastBusy, leastBusyCount + 1);
         return leastBusy;
     }
 
@@ -69,9 +75,15 @@ public class Group extends AbstractActor {
         return downstream.get(counter);
     }
 
-
     private void handleRequest(Request r) {
+        var next = this.balancing == Balancing.LeastBusy ? getLeastBusy() : getRoundRobin();
+        var active = this.active.get(next);
+        if (active == null) {
+            throw new RuntimeException("Didn't find downstream activity stats");
+        }
+        this.active.put(next, active + 1);
+
         r.returnPath.add(this.getSelf());
-        getLeastBusy().tell(r, getSelf());
+        next.tell(r, getSelf());
     }
 }
