@@ -38,12 +38,17 @@ public class Group extends AbstractActor {
 
     private void handleResponse(Response r) {
         var last = r.request.returnPath.removeLast();
-        var wasBusy = active.get(getSender());
+        if (!last.equals(this.getSelf())) {
+            throw new RuntimeException("Routing error");
+        }
+
+        var sender = getSender();
+        var wasBusy = active.get(sender);
         if (wasBusy <= 0) {
             throw new RuntimeException("Less busy than zero");
         }
         active.put(getSender(), wasBusy - 1);
-        last.tell(r, getSelf());
+        r.request.returnPath.getLast().tell(r, getSelf());
     }
 
     private ActorRef getLeastBusy() {
@@ -56,7 +61,7 @@ public class Group extends AbstractActor {
             }
         }
         active.put(leastBusy, leastBusyCount + 1);
-        return  leastBusy;
+        return leastBusy;
     }
 
     private ActorRef getRoundRobin() {

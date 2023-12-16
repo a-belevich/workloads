@@ -211,9 +211,10 @@ public class Service extends AbstractActorWithTimers {
             if (this.downstream == null) {
                 startCalculation(next);
             } else {
+                var s = new SendDownstream(next.goDownstream(0));
                 var d = new InDownstream(next, 0, now.plus(this.downstreamTimeout));
                 inDownstream.put(next.id, d);
-                self().tell(d, ActorRef.noSender());
+                self().tell(s, ActorRef.noSender());
             }
         }
     }
@@ -223,7 +224,11 @@ public class Service extends AbstractActorWithTimers {
         resp.request = req;
         resp.status = status;
         var last = resp.request.returnPath.removeLast();
-        last.tell(resp, this.getSelf());
+        if (!last.equals(this.getSelf())) {
+            throw new RuntimeException("Routing error");
+        }
+
+        resp.request.returnPath.getLast().tell(resp, this.getSelf());
         if (status != Response.Status.Discarded && this.limiter != null) {
             this.limiter.hasResult(resp);
         }
@@ -243,9 +248,9 @@ public class Service extends AbstractActorWithTimers {
 
         var d = new SendDownstream(req.request.goDownstream(req.attempt));
         if (backoff.isZero()) {
-            self().tell(d, ActorRef.noSender());
+            self().tell(d, self());
         } else {
-            this.timers().startSingleTimer(req.request.id.id(), d, backoff);
+            this.timers().startSingleTimer(req.request.id.id() + req.attempt, d, backoff);
         }
     }
 
@@ -257,31 +262,34 @@ public class Service extends AbstractActorWithTimers {
     }
 
     private void sendDownstream(SendDownstream d) {
-        d.request.returnPath.add(self());
         this.downstream.tell(d.request, getSelf());
     }
 
     private void handleResponse(Response r) {
-        var last = r.request.returnPath.removeLast();
+        var last = r.request.returnPath.getLast();
         if (!last.equals(this.getSelf())) {
             throw new RuntimeException("Routing error");
         }
         var inD = inDownstream.get(r.request.id);
-        if (inD.attempt != r.request.attempt) {
+        if (inD == null || inD.attempt != r.request.attempt) {
             return;
         }
         if (r.status == Response.Status.Ok) {
+            this.inDownstream.remove(r.request.id);
             this.startCalculation(r.request);
             return;
         }
-        if (r.request.attempt >= this.downstreamRetries) {
-            sendResponse(r.request, Response.Status.DownstreamError);
+        if (inD.attempt >= this.downstreamRetries) {
+            this.inDownstream.remove(r.request.id);
+            sendResponse(inD.request, Response.Status.DownstreamError);
         } else {
             resendDownstream(inD, LocalDateTime.now());
         }
     }
 
     private void handleRequest(Request r) {
+        r.returnPath.add(self());
+
         if (this.limiter != null && !this.limiter.acquire()) {
             sendResponse(r, Response.Status.Discarded);
             return;

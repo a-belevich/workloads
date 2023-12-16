@@ -11,11 +11,7 @@ public class Request {
     public record RequestId(String id){}
 
     public Request(int attempt) {
-        this(new RequestId(UUID.randomUUID().toString()), attempt);
-    }
-
-    public Request(RequestId id, int attempt) {
-        this(id, attempt,  LocalDateTime.now(), new ArrayList<>());
+        this(new RequestId(UUID.randomUUID().toString()), attempt,  LocalDateTime.now(), new ArrayList<>());
     }
 
     private Request(RequestId id, int attempt, LocalDateTime created, List<ActorRef> returnPath) {
