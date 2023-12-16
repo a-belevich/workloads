@@ -37,7 +37,7 @@ public class Group extends AbstractActor {
     }
 
     private void handleResponse(Response r) {
-        var last = r.returnPath.removeLast();
+        var last = r.request.returnPath.removeLast();
         var wasBusy = active.get(getSender());
         if (wasBusy <= 0) {
             throw new RuntimeException("Less busy than zero");

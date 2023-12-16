@@ -2,6 +2,7 @@ package org.workloads;
 
 import org.apache.pekko.actor.*;
 
+import java.time.Duration;
 import java.util.ArrayList;
 
 import static java.lang.Thread.sleep;
@@ -13,9 +14,9 @@ public class Main {
 
         var bottom = new ArrayList<ActorRef>();
         for (int i = 0; i < 100; i++) {
-            bottom.add(as.actorOf(Service.props(null, 100000000, false)));
+            bottom.add(as.actorOf(Service.props(null, Service.Concurrency.Limited, 10, 200, Duration.ofMillis(200), false)));
         }
-        bottom.add(as.actorOf(Service.props(null, 100000000, true)));
+        bottom.add(as.actorOf(Service.props(null, Service.Concurrency.Limited, 10, 200, Duration.ofMillis(200), true)));
 
         var envoy = as.actorOf(Group.props(bottom));
 

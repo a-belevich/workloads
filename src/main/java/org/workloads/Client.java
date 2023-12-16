@@ -51,7 +51,7 @@ public class Client extends AbstractActor {
     }
 
     private void response(Response r) {
-        var latency = NANOS.between(r.created, LocalDateTime.now());
+        var latency = NANOS.between(r.request.created, LocalDateTime.now());
         if (r.isSuccess) {
             successes++;
             totalLatencySuccesses += latency;
@@ -62,11 +62,10 @@ public class Client extends AbstractActor {
     }
 
     private void send() {
-        var r = new Request();
-        r.returnPath = new ArrayList<>();
+        var r = new Request(0);
         r.returnPath.add(getSelf());
-        r.created = LocalDateTime.now();
         downstream.tell(r, getSelf());
+        this.sent++;
 
         if (LocalDateTime.now().isAfter(nextReport)) {
             nextReport = nextReport.plus(Duration.ofSeconds(1));
