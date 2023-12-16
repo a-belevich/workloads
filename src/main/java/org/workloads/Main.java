@@ -13,10 +13,12 @@ public class Main {
         ActorSystem as = ActorSystem.create();
 
         var bottom = new ArrayList<ActorRef>();
-        for (int i = 0; i < 100; i++) {
-            bottom.add(as.actorOf(Service.props(null, Service.Concurrency.Limited, 10, 200, Duration.ofMillis(200), false)));
+        for (int i = 0; i < 50; i++) {
+            bottom.add(as.actorOf(Service.props(null, 100, null, new Service.LimiterByErrors(200), Duration.ofMillis(100), false)));
+//            bottom.add(as.actorOf(Service.props(null, 100, new Service.Executors(200), null, Duration.ofMillis(100), false)));
         }
-        bottom.add(as.actorOf(Service.props(null, Service.Concurrency.Limited, 10, 200, Duration.ofMillis(200), true)));
+//        bottom.add(as.actorOf(Service.props(null, 100, new Service.Executors(200), null, Duration.ofMillis(100), true)));
+        bottom.add(as.actorOf(Service.props(null, 100, null, new Service.LimiterByErrors(200), Duration.ofMillis(100), true)));
 
         var envoy = as.actorOf(Group.props(bottom));
 

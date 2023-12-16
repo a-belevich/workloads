@@ -6,7 +6,15 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public class Response {
+
+    public enum Status {
+        Ok,
+        Discarded,
+        Error,
+        DownstreamError,
+    }
+
     public Request request;
-    public boolean isSuccess;
+    public Status status;
     public int attemptCount;
 }

@@ -52,7 +52,7 @@ public class Client extends AbstractActor {
 
     private void response(Response r) {
         var latency = NANOS.between(r.request.created, LocalDateTime.now());
-        if (r.isSuccess) {
+        if (r.status == Response.Status.Ok) {
             successes++;
             totalLatencySuccesses += latency;
         } else {

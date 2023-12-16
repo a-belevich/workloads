@@ -9,33 +9,93 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
 
+import static java.lang.Math.floor;
 import static java.time.temporal.ChronoUnit.NANOS;
 
-
-// service:
-// checks for limits (if configured) of active requests
-// executes concurrency limiter (if configured)
-// invokes downstream services (if configured)
-// on error retries (if configured) with backoff (if configured) or returns the error upstream
-// waits (simulating computation)
-// returns a response
+/*
+ * Service class sends a downstream request (unless it's the leaf); and then runs some computation (handles the results).
+ */
 public class Service extends AbstractActorWithTimers {
 
     private static class Tick {
     }
 
-    enum Concurrency {
-        Limited,
-        Unlimited,
+    public record Executors(int numOfExecutors){}
+
+    public abstract static  class Limiter{
+        public abstract boolean acquire();
+        public abstract void hasResult(Response response);
+    }
+
+    // if there was an error last second, decrease concurrency by 10%; if there were no errors and worked at max, increase by 1
+    public static class LimiterByErrors extends Limiter{
+
+        private int inFlight;
+        private int thisSecondLimit;
+
+        private int thisSecondErrors;
+        private int lastSecondErrors;
+        private boolean reachedTop;
+
+        private LocalDateTime nextCheck;
+        private Duration checkFrequency = Duration.ofSeconds(1);
+
+        public LimiterByErrors(int initialLimit) {
+            this.thisSecondLimit = initialLimit;
+            this.nextCheck = LocalDateTime.now().plus(checkFrequency);
+        }
+
+        private void checkForStep() {
+            var now = LocalDateTime.now();
+            if (now.isBefore(nextCheck))
+                return;
+            lastSecondErrors = thisSecondErrors;
+            thisSecondErrors = 0;
+            reachedTop = false;
+            nextCheck = now.plus(checkFrequency);
+
+            if (lastSecondErrors > 0) {
+                thisSecondLimit = (int) floor(0.9 * thisSecondLimit);
+                if (thisSecondLimit < 1) {
+                    this.thisSecondLimit = 1;
+                }
+                return;
+            }
+            if (this.reachedTop) {
+                thisSecondLimit++;
+            }
+        }
+
+        @Override
+        public boolean acquire() {
+            checkForStep();
+
+            if (inFlight + 1 >= this.thisSecondLimit) {
+                reachedTop = true;
+            }
+            var result = inFlight < this.thisSecondLimit;
+            if (result) {
+                inFlight++;
+            }
+            return result;
+        }
+
+        @Override
+        public void hasResult(Response response) {
+            if (response.status != Response.Status.Ok) {
+                thisSecondErrors++;
+            }
+            this.inFlight--;
+        }
     }
 
     private ActorRef downstream;
     private Duration calcDuration;
     private boolean error;
+    private Limiter limiter;
 
-    private Concurrency concurrency;
     private int availableConcurrency;
-    private int concurrencyLimit;
+    private Executors executors;
 
     private int downstreamRetries = 3;
     private Duration downstreamMinBackoff = Duration.ofMillis(100);
@@ -66,15 +126,25 @@ public class Service extends AbstractActorWithTimers {
     private Map<Request.RequestId, InDownstream> inDownstream = new HashMap<>();
     private LinkedList<Request> waiting = new LinkedList<>();
 
-    public static Props props(ActorRef downstream, Concurrency concurrency, int availableConcurrency, int concurrencyLimit, Duration calcDuration, boolean error) {
-        return Props.create(Service.class, () -> new Service(downstream, concurrency, availableConcurrency, concurrencyLimit, calcDuration, error));
+    /*
+    * downstream - downstream service; may be null.
+    * availableConcurrency - number of messages that can be processed locally at full speed. Extra messages handled in parallel delay the execution (emulates CPU bottleneck).
+    *   however, the requests waiting for downstream services are not counted against the availableConcurrency.
+    * executors - number of executors. if null, the number is unlimited.
+    *   if not null, emulates the limit of how many messages are being processed vs how many messages are waiting to start the processing.
+    *   can also be used to emulate some limited resource, like connection pool size.
+    * duration - duration of local calculation (not counting the time downstream or the time waiting for the executor to pick it up).
+    *
+    * */
+    public static Props props(ActorRef downstream, int availableConcurrency, Executors executors, Limiter limiter, Duration calcDuration, boolean error) {
+        return Props.create(Service.class, () -> new Service(downstream, availableConcurrency, executors, limiter, calcDuration, error));
     }
 
-    public Service(ActorRef downstream, Concurrency concurrency, int availableConcurrency, int concurrencyLimit, Duration calcDuration, boolean error) {
+    public Service(ActorRef downstream, int availableConcurrency, Executors executors, Limiter limiter, Duration calcDuration, boolean error) {
         this.downstream = downstream;
-        this.concurrency = concurrency;
         this.availableConcurrency = availableConcurrency;
-        this.concurrencyLimit = concurrencyLimit;
+        this.executors = executors;
+        this.limiter = limiter;
         this.calcDuration = calcDuration;
         this.error = error;
 
@@ -82,6 +152,10 @@ public class Service extends AbstractActorWithTimers {
         created = LocalDateTime.now().minus(Duration.ofMillis(rnd)); //
         lastTick = LocalDateTime.now();
         this.timers().startTimerWithFixedDelay("ms", new Tick(), Duration.ofMillis(1));
+    }
+
+    int inFlight() {
+        return inProgress.size() + inDownstream.size();
     }
 
     @Override
@@ -109,11 +183,7 @@ public class Service extends AbstractActorWithTimers {
             var r = inProgressIter.next();
             r.msToWait -= computeProgressedBy;
             if (r.msToWait <= 0) {
-                var resp = new Response();
-                resp.request = r.request;
-                resp.isSuccess = !this.error;
-                var last = resp.request.returnPath.removeLast();
-                last.tell(resp, this.getSelf());
+                sendResponse(r.request, (this.error ? Response.Status.Error : Response.Status.Ok));
                 inProgressIter.remove();
             }
         }
@@ -128,12 +198,13 @@ public class Service extends AbstractActorWithTimers {
 
             if (req.attempt >= this.downstreamRetries) {
                 inDownstreamIter.remove();
+                sendResponse(req.request, Response.Status.DownstreamError);
             } else {
                 resendDownstream(req, now);
             }
         }
 
-        while (this.concurrency == Concurrency.Unlimited || (inProgress.size() + inDownstream.size()) < this.concurrencyLimit) {
+        while (this.executors == null || inFlight() < this.executors.numOfExecutors) {
             var next = this.waiting.poll();
             if (next == null)
                 break;
@@ -144,6 +215,17 @@ public class Service extends AbstractActorWithTimers {
                 inDownstream.put(next.id, d);
                 self().tell(d, ActorRef.noSender());
             }
+        }
+    }
+
+    private void sendResponse(Request req, Response.Status status) {
+        var resp = new Response();
+        resp.request = req;
+        resp.status = status;
+        var last = resp.request.returnPath.removeLast();
+        last.tell(resp, this.getSelf());
+        if (status != Response.Status.Discarded && this.limiter != null) {
+            this.limiter.hasResult(resp);
         }
     }
 
@@ -188,14 +270,22 @@ public class Service extends AbstractActorWithTimers {
         if (inD.attempt != r.request.attempt) {
             return;
         }
-        if (r.isSuccess) {
+        if (r.status == Response.Status.Ok) {
             this.startCalculation(r.request);
             return;
         }
-        resendDownstream(inD, LocalDateTime.now());
+        if (r.request.attempt >= this.downstreamRetries) {
+            sendResponse(r.request, Response.Status.DownstreamError);
+        } else {
+            resendDownstream(inD, LocalDateTime.now());
+        }
     }
 
     private void handleRequest(Request r) {
+        if (this.limiter != null && !this.limiter.acquire()) {
+            sendResponse(r, Response.Status.Discarded);
+            return;
+        }
         this.waiting.push(r);
     }
 }
