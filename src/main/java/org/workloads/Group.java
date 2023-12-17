@@ -11,8 +11,9 @@ import java.util.Map;
 public class Group extends AbstractActor {
 
     public enum Balancing {
-        LeastBusy,
-        RoundRobin,
+        LeastBusyEnvoy,
+        RoundRobinEnvoy,
+        ClusterIP,
     }
 
     private List<ActorRef> downstream;
@@ -30,7 +31,7 @@ public class Group extends AbstractActor {
         this.balancing = balancing;
         this.downstream = downstream;
         this.active = new HashMap<>();
-        for(var a : downstream) {
+        for (var a : downstream) {
             active.put(a, 0);
         }
     }
@@ -71,12 +72,18 @@ public class Group extends AbstractActor {
     }
 
     private ActorRef getRoundRobin() {
-        counter = (counter+1) % this.downstream.size();
+        counter = (counter + 1) % this.downstream.size();
         return downstream.get(counter);
     }
 
     private void handleRequest(Request r) {
-        var next = this.balancing == Balancing.LeastBusy ? getLeastBusy() : getRoundRobin();
+
+        var next = switch (this.balancing) {
+            case Balancing.LeastBusyEnvoy -> getLeastBusy();
+            case Balancing.RoundRobinEnvoy -> getRoundRobin();
+            case Balancing.ClusterIP -> getClusterIP();
+            default -> throw new RuntimeException("Unknown balancing");
+        };
         var active = this.active.get(next);
         if (active == null) {
             throw new RuntimeException("Didn't find downstream activity stats");
@@ -85,5 +92,9 @@ public class Group extends AbstractActor {
 
         r.returnPath.add(this.getSelf());
         next.tell(r, getSelf());
+    }
+
+    private ActorRef getClusterIP() {
+        throw new RuntimeException("ClusterIP balancing is not implemented yet");
     }
 }

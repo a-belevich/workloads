@@ -22,72 +22,7 @@ public class Service extends AbstractActorWithTimers {
 
     public record Executors(int numOfExecutors){}
 
-    public abstract static  class Limiter{
-        public abstract boolean acquire();
-        public abstract void hasResult(Response response);
-    }
-
     // if there was an error last second, decrease concurrency by 10%; if there were no errors and worked at max, increase by 1
-    public static class LimiterByErrors extends Limiter{
-
-        private int inFlight;
-        private int thisSecondLimit;
-
-        private int thisSecondErrors;
-        private int lastSecondErrors;
-        private boolean reachedTop;
-
-        private LocalDateTime nextCheck;
-        private Duration checkFrequency = Duration.ofSeconds(1);
-
-        public LimiterByErrors(int initialLimit) {
-            this.thisSecondLimit = initialLimit;
-            this.nextCheck = LocalDateTime.now().plus(checkFrequency);
-        }
-
-        private void checkForStep() {
-            var now = LocalDateTime.now();
-            if (now.isBefore(nextCheck))
-                return;
-            lastSecondErrors = thisSecondErrors;
-            thisSecondErrors = 0;
-            reachedTop = false;
-            nextCheck = now.plus(checkFrequency);
-
-            if (lastSecondErrors > 0) {
-                thisSecondLimit = (int) floor(0.9 * thisSecondLimit);
-                if (thisSecondLimit < 1) {
-                    this.thisSecondLimit = 1;
-                }
-                return;
-            }
-            if (this.reachedTop) {
-                thisSecondLimit++;
-            }
-        }
-
-        @Override
-        public boolean acquire() {
-            checkForStep();
-
-            if (inFlight + 1 >= this.thisSecondLimit) {
-                reachedTop = true;
-            }
-            var result = inFlight < this.thisSecondLimit;
-            if (result) {
-                inFlight++;
-            }
-            return result;
-        }
-
-        @Override
-        public void hasResult(Response response) {
-            if (response.status != Response.Status.Ok) {
-                thisSecondErrors++;
-            }
-            this.inFlight--;
-        }
-    }
 
     private ActorRef downstream;
     private Duration calcDuration;
@@ -151,7 +86,7 @@ public class Service extends AbstractActorWithTimers {
         var rnd = new Random().nextInt(1000000);
         created = LocalDateTime.now().minus(Duration.ofMillis(rnd)); //
         lastTick = LocalDateTime.now();
-        this.timers().startTimerWithFixedDelay("ms", new Tick(), Duration.ofMillis(1));
+        this.timers().startTimerAtFixedRate("ms", new Tick(), Duration.ofMillis(1));
     }
 
     int inFlight() {
@@ -172,6 +107,8 @@ public class Service extends AbstractActorWithTimers {
         var now = LocalDateTime.now();
         var sinceLastTick = NANOS.between(lastTick, now);
         lastTick = now;
+
+        if (limiter != null) limiter.tick(now);
 
         double computeProgressedBy = sinceLastTick / 1000000;
         if (this.inProgress.size() > this.availableConcurrency) {
@@ -204,18 +141,26 @@ public class Service extends AbstractActorWithTimers {
             }
         }
 
-        while (this.executors == null || inFlight() < this.executors.numOfExecutors) {
+        while (canStartExecution()) {
             var next = this.waiting.poll();
             if (next == null)
                 break;
-            if (this.downstream == null) {
-                startCalculation(next);
-            } else {
-                var s = new SendDownstream(next.goDownstream(0));
-                var d = new InDownstream(next, 0, now.plus(this.downstreamTimeout));
-                inDownstream.put(next.id, d);
-                self().tell(s, ActorRef.noSender());
-            }
+            startExecution(next, now);
+        }
+    }
+
+    private boolean canStartExecution() {
+        return this.executors == null || inFlight() < this.executors.numOfExecutors;
+    }
+
+    private void startExecution(Request request, LocalDateTime now) {
+        if (this.downstream == null) {
+            startCalculation(request);
+        } else {
+            var s = new SendDownstream(request.goDownstream(0));
+            var d = new InDownstream(request, 0, now.plus(this.downstreamTimeout));
+            inDownstream.put(request.id, d);
+            self().tell(s, ActorRef.noSender());
         }
     }
 
@@ -294,6 +239,10 @@ public class Service extends AbstractActorWithTimers {
             sendResponse(r, Response.Status.Discarded);
             return;
         }
-        this.waiting.push(r);
+        if (canStartExecution()) {
+            startExecution(r, LocalDateTime.now());
+        } else {
+            this.waiting.push(r);
+        }
     }
 }
