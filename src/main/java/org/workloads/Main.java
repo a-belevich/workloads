@@ -18,7 +18,7 @@ public class Main {
 //            bottom.add(as.actorOf(Service.props(null, 100, new Service.Executors(200), null, Duration.ofMillis(100), false)));
         }
 //        bottom.add(as.actorOf(Service.props(null, 100, new Service.Executors(200), null, Duration.ofMillis(100), true)));
-//        bottom.add(as.actorOf(Service.props(null, 100, null, new Service.LimiterByErrors(200), Duration.ofMillis(100), true)));
+        bottom.add(as.actorOf(Service.props(null, 100, null, new Limiter.LimiterByErrors(200), Duration.ofMillis(100), true)));
 
         var bottomEnvoy = as.actorOf(Group.props(bottom, Group.Balancing.LeastBusyEnvoy));
 
@@ -29,7 +29,7 @@ public class Main {
         }
         var topEnvoy = as.actorOf(Group.props(top, Group.Balancing.LeastBusyEnvoy));
 
-        var client = as.actorOf(Client.props(topEnvoy));
+        var client = as.actorOf(Client.props(topEnvoy, 10));
         client.tell(new Client.Start(), ActorRef.noSender());
         sleep(100000);
 

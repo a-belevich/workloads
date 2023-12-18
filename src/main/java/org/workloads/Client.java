@@ -8,7 +8,7 @@ import java.util.ArrayList;
 
 import static java.time.temporal.ChronoUnit.NANOS;
 
-public class Client extends AbstractActor {
+public class Client extends AbstractActorWithTimers {
 
     public final static class Start {
     }
@@ -19,8 +19,6 @@ public class Client extends AbstractActor {
     public final static class Send {
     }
 
-    private Cancellable cancellable;
-
     private LocalDateTime nextReport;
     private int sent;
     private int successes;
@@ -28,16 +26,19 @@ public class Client extends AbstractActor {
     private long totalLatencySuccesses;
     private long totalLatencyFailed;
 
+    private int ratePerMs;
+
     private ActorRef downstream;
 
-    static Props props(ActorRef downstream) {
+    static Props props(ActorRef downstream, int ratePerMs) {
         // You need to specify the actual type of the returned actor
         // since Java 8 lambdas have some runtime type information erased
-        return Props.create(Client.class, () -> new Client(downstream));
+        return Props.create(Client.class, () -> new Client(downstream, ratePerMs));
     }
 
-    public Client(ActorRef downstream) {
+    public Client(ActorRef downstream, int ratePerMs) {
         this.downstream = downstream;
+        this.ratePerMs = ratePerMs;
     }
 
     @Override
@@ -62,10 +63,12 @@ public class Client extends AbstractActor {
     }
 
     private void send() {
-        var r = new Request(0);
-        r.returnPath.add(getSelf());
-        downstream.tell(r, getSelf());
-        this.sent++;
+        for (int i = 0; i < ratePerMs; i++) {
+            var r = new Request(0);
+            r.returnPath.add(getSelf());
+            downstream.tell(r, getSelf());
+            this.sent++;
+        }
 
         if (LocalDateTime.now().isAfter(nextReport)) {
             nextReport = nextReport.plus(Duration.ofSeconds(1));
@@ -82,16 +85,10 @@ public class Client extends AbstractActor {
 
     private void start() {
         nextReport = LocalDateTime.now().plus(Duration.ofSeconds(1));
-        cancellable = getContext().system().scheduler().scheduleAtFixedRate(
-                Duration.ZERO,
-                Duration.ofNanos(100000),
-                getSelf(),
-                new Send(),
-                getContext().system().dispatcher(),
-                ActorRef.noSender());
+        getTimers().startTimerAtFixedRate("client", new Send(), Duration.ofMillis(1));
     }
 
     private void stop() {
-        cancellable.cancel();
+        getTimers().cancel("client");
     }
 }
