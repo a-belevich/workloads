@@ -103,21 +103,35 @@ public abstract class Limiter {
     }
 
     public static class LimiterByLatency extends AIMDLimiter {
-        private int thisSecondErrors;
+        private int thisSecondResponses;
+        private long thisSecondLatencyNanos;
 
-        public LimiterByLatency(int topLimit) {
+        private Duration decreaseTrigger;
+        private Duration increaseTrigger;
+
+        public LimiterByLatency(int topLimit, Duration decreaseTrigger, Duration increaseTrigger) {
             super(topLimit);
+            this.decreaseTrigger = decreaseTrigger;
+            this.increaseTrigger = increaseTrigger;
+
+            if (increaseTrigger.compareTo(decreaseTrigger) > 0) {
+                throw new RuntimeException("Decrease trigger cannot be larger than increase trigger.");
+            }
         }
 
         @Override
         public int moveLimit() {
-            var lastSecondErrors = thisSecondErrors;
-            thisSecondErrors = 0;
+            long avgLatency = 0;
+            if (thisSecondResponses > 0) {
+                avgLatency = thisSecondLatencyNanos/thisSecondResponses;
+            }
+            thisSecondResponses = 0;
+            thisSecondLatencyNanos = 0;
 
-            if (lastSecondErrors > 0) {
+            if (avgLatency > decreaseTrigger.toNanos()) {
                 return -1;
             }
-            if (reachedTop) {
+            if (reachedTop && avgLatency < increaseTrigger.toNanos()) {
                 return 1;
             }
             return  0;
@@ -125,8 +139,9 @@ public abstract class Limiter {
 
         @Override
         public void hasResult(Response response) {
-            if (response.status != Response.Status.Ok) {
-                thisSecondErrors++;
+            if (response.status != Response.Status.Discarded) {
+                thisSecondResponses++;
+                thisSecondLatencyNanos += Duration.between(response.request.created, LocalDateTime.now()).toNanos();
             }
             super.hasResult(response);
         }
