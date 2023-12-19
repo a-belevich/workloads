@@ -17,8 +17,6 @@ import static java.time.temporal.ChronoUnit.NANOS;
  */
 public class Service extends AbstractActorWithTimers {
 
-    public record Executors(int numOfExecutors){}
-
     // if there was an error last second, decrease concurrency by 10%; if there were no errors and worked at max, increase by 1
 
     private ActorRef downstream;
@@ -28,7 +26,6 @@ public class Service extends AbstractActorWithTimers {
     private Limiter limiter;
 
     private int availableConcurrency;
-    private Executors executors;
 
     private int downstreamRetries = 3;
     private Duration downstreamMinBackoff = Duration.ofMillis(100);
@@ -61,20 +58,17 @@ public class Service extends AbstractActorWithTimers {
     * downstream - downstream service; may be null.
     * availableConcurrency - number of messages that can be processed locally at full speed. Extra messages handled in parallel delay the execution (emulates CPU bottleneck).
     *   however, the requests waiting for downstream services are not counted against the availableConcurrency.
-    * executors - number of executors. if null, the number is unlimited.
-    *   if not null, emulates the limit of how many messages are being processed vs how many messages are waiting to start the processing.
-    *   can also be used to emulate some limited resource, like connection pool size.
+    * limiter - the limiter.
     * duration - duration of local calculation (not counting the time downstream or the time waiting for the executor to pick it up).
     *
     * */
-    public static Props props(ActorRef downstream, int availableConcurrency, Executors executors, Limiter limiter, Duration calcDuration, boolean error) {
-        return Props.create(Service.class, () -> new Service(downstream, availableConcurrency, executors, limiter, calcDuration, error));
+    public static Props props(ActorRef downstream, int availableConcurrency, Limiter limiter, Duration calcDuration, boolean error) {
+        return Props.create(Service.class, () -> new Service(downstream, availableConcurrency, limiter, calcDuration, error));
     }
 
-    public Service(ActorRef downstream, int availableConcurrency, Executors executors, Limiter limiter, Duration calcDuration, boolean error) {
+    public Service(ActorRef downstream, int availableConcurrency, Limiter limiter, Duration calcDuration, boolean error) {
         this.downstream = downstream;
         this.availableConcurrency = availableConcurrency;
-        this.executors = executors;
         this.limiter = limiter;
         this.calcDuration = calcDuration;
         this.error = error;
