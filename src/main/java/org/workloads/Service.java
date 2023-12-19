@@ -22,7 +22,7 @@ public class Service extends AbstractActorWithTimers {
     private ActorRef downstream;
     private Duration calcDuration;
     private Duration downstreamTimeout = Duration.ofSeconds(1);
-    private boolean error;
+    private Errors errors;
     private Limiter limiter;
 
     private int availableConcurrency;
@@ -62,16 +62,16 @@ public class Service extends AbstractActorWithTimers {
     * duration - duration of local calculation (not counting the time downstream or the time waiting for the executor to pick it up).
     *
     * */
-    public static Props props(ActorRef downstream, int availableConcurrency, Limiter limiter, Duration calcDuration, boolean error) {
-        return Props.create(Service.class, () -> new Service(downstream, availableConcurrency, limiter, calcDuration, error));
+    public static Props props(ActorRef downstream, int availableConcurrency, Limiter limiter, Duration calcDuration, Errors errors) {
+        return Props.create(Service.class, () -> new Service(downstream, availableConcurrency, limiter, calcDuration, errors));
     }
 
-    public Service(ActorRef downstream, int availableConcurrency, Limiter limiter, Duration calcDuration, boolean error) {
+    public Service(ActorRef downstream, int availableConcurrency, Limiter limiter, Duration calcDuration, Errors errors) {
         this.downstream = downstream;
         this.availableConcurrency = availableConcurrency;
         this.limiter = limiter;
         this.calcDuration = calcDuration;
-        this.error = error;
+        this.errors = errors;
 
         var rnd = new Random().nextInt(1000000);
         created = LocalDateTime.now().minus(Duration.ofMillis(rnd)); //
@@ -109,7 +109,8 @@ public class Service extends AbstractActorWithTimers {
             var r = inProgressIter.next();
             r.msToWait -= computeProgressedBy;
             if (r.msToWait <= 0) {
-                sendResponse(r.request, (this.error ? Response.Status.Error : Response.Status.Ok));
+                var error = this.errors == null ? false : this.errors.error(r.request);
+                sendResponse(r.request, (error ? Response.Status.Error : Response.Status.Ok));
                 inProgressIter.remove();
             }
         }

@@ -11,6 +11,6 @@ public class Client extends Service {
     }
 
     public Client(ActorRef downstream) {
-        super(downstream,  1, new Limiter.Unlimited(), Duration.ZERO, false);
+        super(downstream,  1, new Limiter.Unlimited(), Duration.ZERO, null);
     }
 }
