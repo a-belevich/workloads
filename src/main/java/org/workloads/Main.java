@@ -15,30 +15,29 @@ public class Main {
         var allActors = new ArrayList<ActorRef>();
         var bottom = new ArrayList<ActorRef>();
         for (int i = 0; i < 100; i++) {
-            bottom.add(as.actorOf(Service.props(null, 100, new Limiter.LimiterByErrors(Limiter.Reaction.Discard, 200), Duration.ofMillis(100), false)));
+            bottom.add(as.actorOf(Service.props(null, 100, new Limiter.LimiterByErrors(Limiter.Reaction.Discard, 200), Duration.ofMillis(100), false), "bottom_"+i));
         }
-//        bottom.add(as.actorOf(Service.props(null, 100, null, new Limiter.LimiterByErrors(200), Duration.ofMillis(100), true)));
+        bottom.add(as.actorOf(Service.props(null, 100, new Limiter.LimiterByErrors(Limiter.Reaction.Discard, 200), Duration.ofMillis(100), true), "bottom_bad"));
         allActors.addAll(bottom);
 
-        var bottomEnvoy = as.actorOf(Group.props(bottom, Group.Balancing.LeastBusyEnvoy));
+        var bottomEnvoy = as.actorOf(Group.props(bottom, Group.Balancing.LeastBusyEnvoy), "bottom_envoy");
         allActors.add(bottomEnvoy);
 
         var top = new ArrayList<ActorRef>();
         for (int i = 0; i < 100; i++) {
-            // top.add(as.actorOf(Service.props(bottomEnvoy, 100, new Service.Executors(200), null, Duration.ofMillis(100), false)));
-            top.add(as.actorOf(Service.props(bottomEnvoy, 100, new Limiter.LimiterByErrors(Limiter.Reaction.Discard, 200), Duration.ofMillis(100), false)));
+            top.add(as.actorOf(Service.props(bottomEnvoy, 100, new Limiter.LimiterByErrors(Limiter.Reaction.Discard, 200), Duration.ofMillis(100), false), "top_"+i));
         }
         allActors.addAll(top);
-        var topEnvoy = as.actorOf(Group.props(top, Group.Balancing.LeastBusyEnvoy));
+        var topEnvoy = as.actorOf(Group.props(top, Group.Balancing.LeastBusyEnvoy), "top_envoy");
         allActors.add(topEnvoy);
 
         var clients = new ArrayList<ActorRef>();
         for (int i = 0; i < 10000; i++) {
-            clients.add(as.actorOf(Client.props(topEnvoy)));
+            clients.add(as.actorOf(Client.props(topEnvoy), "client_" + i));
         }
         allActors.addAll(clients);
 
-        var driver = as.actorOf(Driver.props(clients, 10, allActors));
+        var driver = as.actorOf(Driver.props(clients, 10, allActors), "driver");
         driver.tell(new Driver.Start(), ActorRef.noSender());
         sleep(100000);
 

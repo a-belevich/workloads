@@ -130,6 +130,10 @@ public class Service extends AbstractActorWithTimers {
             }
         }
 
+        startExecution(now);
+    }
+
+    private void startExecution(LocalDateTime now) {
         while (true) {
             var next = this.limiter.poll();
             if (next == null)
@@ -174,7 +178,7 @@ public class Service extends AbstractActorWithTimers {
         }
 
         req.attempt++;
-        req.deadline = now.plus(this.downstreamTimeout);
+        req.deadline = now.plus(this.downstreamTimeout).plus(backoff);
 
         var d = new SendDownstream(req.request.goDownstream(req.attempt));
         if (backoff.isZero()) {
@@ -206,7 +210,7 @@ public class Service extends AbstractActorWithTimers {
         }
         if (r.status == Response.Status.Ok) {
             this.inDownstream.remove(r.request.id);
-            this.startCalculation(r.request);
+            this.startCalculation(inD.request);
             return;
         }
         if (inD.attempt >= this.downstreamRetries) {
@@ -222,6 +226,8 @@ public class Service extends AbstractActorWithTimers {
 
         if (!this.limiter.push(r)) {
             sendResponse(r, Response.Status.Discarded);
+            return;
         }
+        startExecution(LocalDateTime.now());
     }
 }

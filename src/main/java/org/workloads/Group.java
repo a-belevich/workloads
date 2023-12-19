@@ -45,7 +45,8 @@ public class Group extends AbstractActor {
                 .build();
     }
 
-    private void tick() {}
+    private void tick() {
+    }
 
     private void handleResponse(Response r) {
         var last = r.request.returnPath.removeLast();
