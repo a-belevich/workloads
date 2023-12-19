@@ -4,11 +4,10 @@ import org.apache.pekko.actor.*;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 
 import static java.time.temporal.ChronoUnit.NANOS;
 
-public class Client extends AbstractActorWithTimers {
+public class Driver extends AbstractActorWithTimers {
 
     public final static class Start {
     }
@@ -33,10 +32,10 @@ public class Client extends AbstractActorWithTimers {
     static Props props(ActorRef downstream, int ratePerMs) {
         // You need to specify the actual type of the returned actor
         // since Java 8 lambdas have some runtime type information erased
-        return Props.create(Client.class, () -> new Client(downstream, ratePerMs));
+        return Props.create(Driver.class, () -> new Driver(downstream, ratePerMs));
     }
 
-    public Client(ActorRef downstream, int ratePerMs) {
+    public Driver(ActorRef downstream, int ratePerMs) {
         this.downstream = downstream;
         this.ratePerMs = ratePerMs;
     }

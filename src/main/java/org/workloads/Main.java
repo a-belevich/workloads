@@ -29,8 +29,8 @@ public class Main {
         }
         var topEnvoy = as.actorOf(Group.props(top, Group.Balancing.LeastBusyEnvoy));
 
-        var client = as.actorOf(Client.props(topEnvoy, 10));
-        client.tell(new Client.Start(), ActorRef.noSender());
+        var client = as.actorOf(Driver.props(topEnvoy, 10));
+        client.tell(new Driver.Start(), ActorRef.noSender());
         sleep(100000);
 
         as.terminate();
