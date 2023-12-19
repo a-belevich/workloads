@@ -2,6 +2,7 @@ package org.workloads;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.LinkedList;
 
 import static java.lang.Math.floor;
 
@@ -12,21 +13,78 @@ public abstract class Limiter {
         Discard,
     }
 
-    public abstract boolean acquire();
+    private Reaction reaction;
+    private LinkedList<Request> waiting = new LinkedList<>();
+    protected int inFlight;
 
-    public abstract void hasResult(Response response);
+    protected abstract boolean canStart();
 
     public abstract void tick(LocalDateTime now);
 
+    public Limiter(Reaction reaction) {
+        this.reaction = reaction;
+    }
+
+    public Request poll() {
+        if (!canStart())
+            return null;
+        return waiting.poll();
+    }
+
+    public boolean push(Request request) {
+        if (reaction == Reaction.Wait || canStart()) {
+            this.waiting.push(request);
+            this.inFlight++;
+            return true;
+        }
+
+        return false;
+    }
+
+    public void hasResult(Response response) {
+        this.inFlight--;
+    }
+
+    public static class StaticLimiter extends Limiter {
+        private int limit;
+
+        public StaticLimiter(Reaction reaction, int limit) {
+            super(reaction);
+            this.limit = limit;
+        }
+
+        @Override
+        public void tick(LocalDateTime now) {}
+
+        @Override
+        protected boolean canStart() {
+            return inFlight < this.limit;
+        }
+    }
+
+    public static class Unlimited extends Limiter {
+        public Unlimited() {
+            super(Reaction.Discard);
+        }
+
+        @Override
+        public void tick(LocalDateTime now) {}
+
+        @Override
+        protected boolean canStart() {
+            return true;
+        }
+    }
+
     public abstract static class AIMDLimiter extends Limiter {
-        protected int inFlight;
         protected int currentLimit;
         protected int topLimit;
         protected boolean reachedTop;
         protected LocalDateTime nextCheck;
         protected Duration checkFrequency = Duration.ofSeconds(1);
 
-        public AIMDLimiter(int topLimit) {
+        public AIMDLimiter(Reaction reaction, int topLimit) {
+            super(reaction);
             this.topLimit = topLimit;
             this.currentLimit = topLimit / 2;
             if (currentLimit < 1)
@@ -61,28 +119,19 @@ public abstract class Limiter {
         }
 
         @Override
-        public boolean acquire() {
+        protected boolean canStart() {
             if (inFlight + 1 >= currentLimit) {
                 reachedTop = true;
             }
-            var result = inFlight < this.currentLimit;
-            if (result) {
-                inFlight++;
-            }
-            return result;
-        }
-
-        @Override
-        public void hasResult(Response response) {
-            this.inFlight--;
+            return inFlight < this.currentLimit;
         }
     }
 
     public static class LimiterByErrors extends AIMDLimiter {
         private int thisSecondErrors;
 
-        public LimiterByErrors(int topLimit) {
-            super(topLimit);
+        public LimiterByErrors(Reaction reaction, int topLimit) {
+            super(reaction, topLimit);
         }
 
         @Override
@@ -115,8 +164,8 @@ public abstract class Limiter {
         private Duration decreaseTrigger;
         private Duration increaseTrigger;
 
-        public LimiterByLatency(int topLimit, Duration decreaseTrigger, Duration increaseTrigger) {
-            super(topLimit);
+        public LimiterByLatency(Reaction reaction, int topLimit, Duration decreaseTrigger, Duration increaseTrigger) {
+            super(reaction, topLimit);
             this.decreaseTrigger = decreaseTrigger;
             this.increaseTrigger = increaseTrigger;
 

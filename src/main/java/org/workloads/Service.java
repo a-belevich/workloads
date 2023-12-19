@@ -56,7 +56,6 @@ public class Service extends AbstractActorWithTimers {
 
     private List<InProgress> inProgress = new ArrayList<>();
     private Map<Request.RequestId, InDownstream> inDownstream = new HashMap<>();
-    private LinkedList<Request> waiting = new LinkedList<>();
 
     /*
     * downstream - downstream service; may be null.
@@ -137,16 +136,12 @@ public class Service extends AbstractActorWithTimers {
             }
         }
 
-        while (canStartExecution()) {
-            var next = this.waiting.poll();
+        while (true) {
+            var next = this.limiter.poll();
             if (next == null)
                 break;
             startExecution(next, now);
         }
-    }
-
-    private boolean canStartExecution() {
-        return this.executors == null || inFlight() < this.executors.numOfExecutors;
     }
 
     private void startExecution(Request request, LocalDateTime now) {
@@ -231,14 +226,8 @@ public class Service extends AbstractActorWithTimers {
     private void handleRequest(Request r) {
         r.returnPath.add(self());
 
-        if (this.limiter != null && !this.limiter.acquire()) {
+        if (!this.limiter.push(r)) {
             sendResponse(r, Response.Status.Discarded);
-            return;
-        }
-        if (canStartExecution()) {
-            startExecution(r, LocalDateTime.now());
-        } else {
-            this.waiting.push(r);
         }
     }
 }
