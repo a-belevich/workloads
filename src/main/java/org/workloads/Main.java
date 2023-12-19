@@ -17,7 +17,7 @@ public class Main {
         for (int i = 0; i < 100; i++) {
             bottom.add(as.actorOf(Service.props(null, 100, new Limiter.LimiterByErrors(Limiter.Reaction.Discard, 200), Duration.ofMillis(100), null), "bottom_"+i));
         }
-        bottom.add(as.actorOf(Service.props(null, 100, new Limiter.LimiterByErrors(Limiter.Reaction.Discard, 200), Duration.ofMillis(100), new Errors.OnceInAwhile(Duration.ofSeconds(1))), "bottom_bad"));
+        bottom.add(as.actorOf(Service.props(null, 100, new Limiter.LimiterByErrors(Limiter.Reaction.Discard, 200), Duration.ofMillis(100), new Errors.OnceInAwhile(Duration.ofSeconds(2))), "bottom_bad"));
         allActors.addAll(bottom);
 
         var bottomEnvoy = as.actorOf(Group.props(bottom, Group.Balancing.LeastBusyEnvoy), "bottom_envoy");
@@ -39,7 +39,7 @@ public class Main {
 
         var driver = as.actorOf(Driver.props(clients, 10, allActors), "driver");
         driver.tell(new Driver.Start(), ActorRef.noSender());
-        sleep(100000);
+        sleep(300000);
 
         as.terminate();
     }

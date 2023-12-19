@@ -60,7 +60,7 @@ public abstract class Errors {
 
         @Override
         public boolean error(Request r) {
-            if (nextFire.isAfter(LocalDateTime.now())) {
+            if (nextFire.isBefore(LocalDateTime.now())) {
                 nextFire = LocalDateTime.now().plus(period);
                 return true;
             }
