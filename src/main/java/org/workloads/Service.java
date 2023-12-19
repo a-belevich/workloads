@@ -29,7 +29,7 @@ public class Service extends AbstractActorWithTimers {
 
     private int downstreamRetries = 3;
     private Duration downstreamMinBackoff = Duration.ofMillis(100);
-    private Duration downstreamMaxBackoff = Duration.ofMillis(100);
+    private Duration downstreamMaxBackoff = Duration.ofMillis(1000);
 
     private LocalDateTime created;
     private LocalDateTime lastTick;
