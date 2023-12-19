@@ -6,6 +6,12 @@ import java.time.LocalDateTime;
 import static java.lang.Math.floor;
 
 public abstract class Limiter {
+
+    public enum Reaction {
+        Wait,
+        Discard,
+    }
+
     public abstract boolean acquire();
 
     public abstract void hasResult(Response response);

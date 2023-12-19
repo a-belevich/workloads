@@ -4,19 +4,15 @@ import org.apache.pekko.actor.*;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static java.time.temporal.ChronoUnit.NANOS;
 
 public class Driver extends AbstractActorWithTimers {
 
-    public final static class Start {
-    }
-
-    public final static class Stop {
-    }
-
-    public final static class Send {
-    }
+    static class Tick {}
+    public final static class Start {}
+    public final static class Stop {}
 
     private LocalDateTime nextReport;
     private int sent;
@@ -27,24 +23,27 @@ public class Driver extends AbstractActorWithTimers {
 
     private int ratePerMs;
 
-    private ActorRef downstream;
+    private List<ActorRef> clients;
+    private int nextClient = 0;
+    List<ActorRef> allActors;
 
-    static Props props(ActorRef downstream, int ratePerMs) {
+    static Props props(List<ActorRef> clients, int ratePerMs, List<ActorRef> allActors) {
         // You need to specify the actual type of the returned actor
         // since Java 8 lambdas have some runtime type information erased
-        return Props.create(Driver.class, () -> new Driver(downstream, ratePerMs));
+        return Props.create(Driver.class, () -> new Driver(clients, ratePerMs, allActors));
     }
 
-    public Driver(ActorRef downstream, int ratePerMs) {
-        this.downstream = downstream;
+    public Driver(List<ActorRef> clients, int ratePerMs, List<ActorRef> allActors) {
+        this.clients = clients;
         this.ratePerMs = ratePerMs;
+        this.allActors = allActors;
     }
 
     @Override
     public Receive createReceive() {
         return receiveBuilder()
                 .match(Start.class, r -> start())
-                .match(Send.class, r -> send())
+                .match(Tick.class, t -> tick(t))
                 .match(Response.class, r -> response(r))
                 .match(Stop.class, r -> stop())
                 .build();
@@ -61,11 +60,16 @@ public class Driver extends AbstractActorWithTimers {
         }
     }
 
-    private void send() {
+    private void tick(Tick t) {
+        for (var a : allActors) {
+            a.tell(t, ActorRef.noSender());
+        }
+
         for (int i = 0; i < ratePerMs; i++) {
             var r = new Request(0);
             r.returnPath.add(getSelf());
-            downstream.tell(r, getSelf());
+            clients.get(nextClient).tell(r, getSelf());
+            nextClient = (nextClient + 1) % clients.size();
             this.sent++;
         }
 
@@ -84,7 +88,7 @@ public class Driver extends AbstractActorWithTimers {
 
     private void start() {
         nextReport = LocalDateTime.now().plus(Duration.ofSeconds(1));
-        getTimers().startTimerAtFixedRate("client", new Send(), Duration.ofMillis(1));
+        getTimers().startTimerAtFixedRate("client", new Tick(), Duration.ofMillis(1));
     }
 
     private void stop() {

@@ -41,8 +41,11 @@ public class Group extends AbstractActor {
         return receiveBuilder()
                 .match(Request.class, r -> handleRequest(r))
                 .match(Response.class, r -> handleResponse(r))
+                .match(Driver.Tick.class, t -> tick())
                 .build();
     }
+
+    private void tick() {}
 
     private void handleResponse(Response r) {
         var last = r.request.returnPath.removeLast();

@@ -17,15 +17,13 @@ import static java.time.temporal.ChronoUnit.NANOS;
  */
 public class Service extends AbstractActorWithTimers {
 
-    private static class Tick {
-    }
-
     public record Executors(int numOfExecutors){}
 
     // if there was an error last second, decrease concurrency by 10%; if there were no errors and worked at max, increase by 1
 
     private ActorRef downstream;
     private Duration calcDuration;
+    private Duration downstreamTimeout = Duration.ofSeconds(1);
     private boolean error;
     private Limiter limiter;
 
@@ -35,7 +33,6 @@ public class Service extends AbstractActorWithTimers {
     private int downstreamRetries = 3;
     private Duration downstreamMinBackoff = Duration.ofMillis(100);
     private Duration downstreamMaxBackoff = Duration.ofMillis(100);
-    private Duration downstreamTimeout = Duration.ofSeconds(1);
 
     private LocalDateTime created;
     private LocalDateTime lastTick;
@@ -86,7 +83,6 @@ public class Service extends AbstractActorWithTimers {
         var rnd = new Random().nextInt(1000000);
         created = LocalDateTime.now().minus(Duration.ofMillis(rnd)); //
         lastTick = LocalDateTime.now();
-        this.timers().startTimerAtFixedRate("ms", new Tick(), Duration.ofMillis(1));
     }
 
     int inFlight() {
@@ -99,7 +95,7 @@ public class Service extends AbstractActorWithTimers {
                 .match(Request.class, r -> handleRequest(r))
                 .match(SendDownstream.class, d -> sendDownstream(d))
                 .match(Response.class, r -> handleResponse(r))
-                .match(Tick.class, t -> tick())
+                .match(Driver.Tick.class, t -> tick())
                 .build();
     }
 
