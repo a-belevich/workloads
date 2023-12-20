@@ -19,7 +19,7 @@ In current version, it can simulate:
  - Different load balancing strategies:
    - Request-level round-robin (emulates round-robin envoy)
    - Request-level least busy (emulates envoy with Least Requests).
-   - TODO: ClusterIP (connection-level round robin).
+   - ClusterIP (connection-level round-robin).
 
 
 Running locally:

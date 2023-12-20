@@ -76,6 +76,9 @@ public class Service extends AbstractActorWithTimers {
         var rnd = new Random().nextInt(1000000);
         created = LocalDateTime.now().minus(Duration.ofMillis(rnd)); //
         lastTick = LocalDateTime.now();
+
+        if (downstream != null)
+            downstream.tell(new Group.Connect(), getSelf());
     }
 
     int inFlight() {
@@ -89,7 +92,12 @@ public class Service extends AbstractActorWithTimers {
                 .match(SendDownstream.class, d -> sendDownstream(d))
                 .match(Response.class, r -> handleResponse(r))
                 .match(Driver.Tick.class, t -> tick())
+                .match(Group.Connect.class, c -> handleConnect())
                 .build();
+    }
+
+    private void handleConnect() {
+        // do nothing
     }
 
     private void tick() {

@@ -14,7 +14,7 @@ public class Main {
 
         var allActors = new ArrayList<ActorRef>();
         var bottom = new ArrayList<ActorRef>();
-        for (int i = 0; i < 100; i++) {
+        for (int i = 0; i < 99; i++) {
             bottom.add(as.actorOf(Service.props(null, 100, new Limiter.LimiterByErrors(Limiter.Reaction.Discard, 200), Duration.ofMillis(100), null), "bottom_"+i));
         }
         bottom.add(as.actorOf(Service.props(null, 100, new Limiter.LimiterByErrors(Limiter.Reaction.Discard, 200), Duration.ofMillis(100), new Errors.OnceInAwhile(Duration.ofSeconds(2))), "bottom_bad"));

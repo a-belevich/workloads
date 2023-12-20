@@ -16,14 +16,15 @@ public class Group extends AbstractActor {
         ClusterIP,
     }
 
+    public static class Connect{}
+
     private List<ActorRef> downstream;
     private int counter;
     private Map<ActorRef, Integer> active;
+    private Map<ActorRef, ActorRef> connections = new HashMap<>();
     private Balancing balancing;
 
     static Props props(List<ActorRef> downstream, Balancing balancing) {
-        // You need to specify the actual type of the returned actor
-        // since Java 8 lambdas have some runtime type information erased
         return Props.create(Group.class, () -> new Group(downstream, balancing));
     }
 
@@ -41,8 +42,15 @@ public class Group extends AbstractActor {
         return receiveBuilder()
                 .match(Request.class, r -> handleRequest(r))
                 .match(Response.class, r -> handleResponse(r))
+                .match(Connect.class, c -> handleConnect())
                 .match(Driver.Tick.class, t -> tick())
                 .build();
+    }
+
+    private void handleConnect() {
+        if (this.balancing != Balancing.ClusterIP)
+            return;
+        this.connections.put(getSender(), getRoundRobin());
     }
 
     private void tick() {
@@ -99,6 +107,6 @@ public class Group extends AbstractActor {
     }
 
     private ActorRef getClusterIP() {
-        throw new RuntimeException("ClusterIP balancing is not implemented yet");
+        return connections.get(getSender());
     }
 }
